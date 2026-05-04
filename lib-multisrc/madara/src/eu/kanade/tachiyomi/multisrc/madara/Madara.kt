@@ -196,6 +196,25 @@ abstract class Madara(
         "div.nav-previous, nav.navigation-ajax, a.nextpostslink"
     }
 
+    // Related Manga
+    protected open fun relatedMangaSelector() = ".related-reading-wrap"
+
+    override fun relatedMangaListParse(response: Response): List<SManga> {
+        val document = response.asJsoup()
+        return document.select(relatedMangaSelector())
+            .mapNotNull { manga ->
+                SManga.create().apply {
+                    manga.selectFirst(".widget-title a")?.let {
+                        setUrlWithoutDomain(it.attr("abs:href"))
+                        title = it.ownText()
+                    } ?: return@mapNotNull null
+                    manga.selectFirst(".widget-thumbnail img")?.let {
+                        thumbnail_url = processThumbnail(imageFromElement(it), true)
+                    }
+                }
+            }
+    }
+
     // Latest Updates
 
     override fun latestUpdatesSelector() = popularMangaSelector()
@@ -783,6 +802,7 @@ abstract class Madara(
         element.hasAttr("data-lazy-src") -> element.attr("abs:data-lazy-src")
         element.hasAttr("srcset") -> element.attr("abs:srcset").getSrcSetImage()
         element.hasAttr("data-cfsrc") -> element.attr("abs:data-cfsrc")
+        element.hasAttr("data-manga-src") -> element.attr("abs:data-manga-src")
         else -> element.attr("abs:src")
     }
 

@@ -56,13 +56,15 @@ class MangaDto(
     // Details
     private val authors: List<AuthorDto>? = null,
     private val synopsis: String? = null,
-    private val tags: List<TagDto>? = null,
+    private val genres: List<TagDto>? = null,
     private val status: String? = null,
     private val type: String? = null,
     val scanlators: List<ScanlatorDto>? = null,
 
     // Chapters
     val chapters: List<ChapterDto>? = null,
+
+    val recommendations: List<MangaDto>? = null,
 ) {
     private fun getImagePath(): String? {
         val url = when (imagePath) {
@@ -87,7 +89,7 @@ class MangaDto(
         description = synopsis
         genre = buildList {
             type?.let { add(it) }
-            tags?.forEach { add(it.name) }
+            genres?.forEach { add(it.name) }
         }.joinToString()
         authors?.let {
             author = it.joinToString { author -> author.name }
@@ -102,6 +104,8 @@ class MangaDto(
             }
         }
     }
+
+    fun recommendations(baseUrl: String) = recommendations?.map { it.toSManga(baseUrl) } ?: emptyList()
 
     @Serializable
     class TagDto(
