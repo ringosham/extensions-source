@@ -14,7 +14,6 @@ import android.webkit.WebViewClient
 import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -24,6 +23,7 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.lib.i18n.Intl
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.parseAs
 import keiyoushi.utils.tryParse
@@ -57,7 +57,7 @@ open class Comikey(
 
     override val supportsLatest = true
 
-    override val client = network.cloudflareClient.newBuilder()
+    override val client = network.client.newBuilder()
         .rateLimit(3)
         .build()
 
@@ -91,7 +91,14 @@ open class Comikey(
         page: Int,
         query: String,
         filters: FilterList,
-    ): Observable<MangasPage> = if (query.startsWith(PREFIX_SLUG_SEARCH)) {
+    ): Observable<MangasPage> = if (query.startsWith("https://")) {
+        val url = query.toHttpUrl()
+        if (url.host != baseUrl.toHttpUrl().host) {
+            throw Exception("Unsupported url")
+        }
+        val slug = "${url.pathSegments[1]}/${url.pathSegments[2]}"
+        fetchSearchManga(page, "$PREFIX_SLUG_SEARCH$slug", filters)
+    } else if (query.startsWith(PREFIX_SLUG_SEARCH)) {
         val slug = query.removePrefix(PREFIX_SLUG_SEARCH)
         val url = "/comics/$slug/"
 

@@ -2,13 +2,8 @@ package eu.kanade.tachiyomi.extension.all.projectsuki
 
 import android.os.Build
 import androidx.preference.PreferenceScreen
-import eu.kanade.tachiyomi.extension.all.projectsuki.activities.INTENT_BOOK_QUERY_PREFIX
-import eu.kanade.tachiyomi.extension.all.projectsuki.activities.INTENT_READ_QUERY_PREFIX
-import eu.kanade.tachiyomi.extension.all.projectsuki.activities.INTENT_SEARCH_QUERY_PREFIX
-import eu.kanade.tachiyomi.extension.all.projectsuki.activities.ProjectSukiSearchUrlActivity
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.asObservableSuccess
-import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -21,6 +16,7 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.lib.randomua.addRandomUAPreference
 import keiyoushi.lib.randomua.setRandomUserAgent
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.getPreferences
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl
@@ -33,10 +29,10 @@ import org.jsoup.nodes.Document
 import rx.Observable
 import java.net.URI
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 import kotlin.math.floor
 import kotlin.math.log10
 import kotlin.math.pow
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * [Project Suki](https://projectsuki.com)
@@ -209,8 +205,8 @@ class ProjectSuki :
      * (this is a permalink, check for updated version),
      * most client options are already set as they should be, including the [Cache][okhttp3.Cache].
      */
-    override val client: OkHttpClient = network.cloudflareClient.newBuilder()
-        .rateLimit(2, 1, TimeUnit.SECONDS)
+    override val client: OkHttpClient = network.client.newBuilder()
+        .rateLimit(2, 1.seconds)
         .build()
 
     override fun headersBuilder() = super.headersBuilder()
@@ -346,7 +342,7 @@ class ProjectSuki :
      * Otherwise Tachiyomi will just wait for the Observable forever (or until a timeout).
      *
      * Most of the times you won't need to override this function: [searchMangaRequest] and [searchMangaParse] will suffice.
-     * But if you need to replace the default search behaviour (e.g. because of an [Url Activity][ProjectSukiSearchUrlActivity]),
+     * But if you need to replace the default search behaviour (e.g. because of a Url Activity),
      * you might need to override this function.
      */
     override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
@@ -369,6 +365,7 @@ class ProjectSuki :
         val queryAsURL: HttpUrl? by unexpectedErrorCatchingLazy { query.toHttpUrlOrNull() ?: """${homepageUri}$query""".toHttpUrlOrNull() }
         val bookUrlMatch by unexpectedErrorCatchingLazy { queryAsURL?.matchAgainst(bookUrlPattern) }
         val readUrlMatch by unexpectedErrorCatchingLazy { queryAsURL?.matchAgainst(chapterUrlPattern) }
+        val isSearchUrl = queryAsURL?.host == homepageUrl.host && queryAsURL?.pathSegments?.firstOrNull() == "search"
 
         return when {
             // sent by the url activity, might also be because the user entered a query via $ps-search:
@@ -413,6 +410,19 @@ class ProjectSuki :
                 if (bookid.isBlank()) error("Empty bookid!")
 
                 bookid.toMangasPageObservable()
+            }
+
+            // raw search url e.g. https://projectsuki.com/search?q=...
+            isSearchUrl -> {
+                val urlQuery = queryAsURL!!.query ?: error("Empty search query!")
+                if (urlQuery.isBlank()) error("Empty search query!")
+
+                val rawUrl = """${homepageUri.toASCIIString()}/search?$urlQuery"""
+                val url = rawUrl.toHttpUrlOrNull() ?: reportErrorToUser { "Invalid search url: $rawUrl" }
+
+                client.newCall(GET(url, headers))
+                    .asObservableSuccess()
+                    .map { response -> searchMangaParse(response, overrideHasNextPage = false) }
             }
 
             // use result from https://projectsuki.com/api/book/search
@@ -679,3 +689,7 @@ class ProjectSuki :
         private const val DESCRIPTION_DIVIDER: String = "/=/-/=/-/=/-/=/-/=/-/=/-/=/-/=/"
     }
 }
+
+internal const val INTENT_SEARCH_QUERY_PREFIX: String = """${'$'}$SHORT_FORM_ID-search:"""
+internal const val INTENT_BOOK_QUERY_PREFIX: String = """${'$'}$SHORT_FORM_ID-book:"""
+internal const val INTENT_READ_QUERY_PREFIX: String = """${'$'}$SHORT_FORM_ID-read:"""

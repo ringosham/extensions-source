@@ -10,21 +10,18 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
 import keiyoushi.utils.tryParse
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-class Ikuhentai : HttpSource() {
-    override val name = "Ikuhentai"
-    override val baseUrl = "https://ikuhentai.net"
-    override val lang = "es"
+@Source
+abstract class Ikuhentai : HttpSource() {
     override val supportsLatest = true
-    override val client: OkHttpClient = network.cloudflareClient
 
     private val dateFormat = SimpleDateFormat("MMMM dd, yyyy", Locale("es"))
 

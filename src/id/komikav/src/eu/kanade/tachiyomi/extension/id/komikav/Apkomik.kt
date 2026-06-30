@@ -1,14 +1,14 @@
 package eu.kanade.tachiyomi.extension.id.komikav
 
 import eu.kanade.tachiyomi.multisrc.mangathemesia.MangaThemesia
-import eu.kanade.tachiyomi.network.interceptor.rateLimit
+import keiyoushi.network.rateLimit
 import java.text.SimpleDateFormat
 import java.util.Locale
 
 class Apkomik :
     MangaThemesia(
         "APKOMIK",
-        "https://apkomik.cc",
+        "https://01.apkomik.com",
         "id",
         dateFormat = SimpleDateFormat("MMMM dd, yyyy", Locale.forLanguageTag("id")),
     ) {

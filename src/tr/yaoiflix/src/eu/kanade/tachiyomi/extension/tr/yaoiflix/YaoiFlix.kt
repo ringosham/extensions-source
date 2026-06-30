@@ -1,14 +1,14 @@
 package eu.kanade.tachiyomi.extension.tr.yaoiflix
 
 import eu.kanade.tachiyomi.multisrc.madara.Madara
-import eu.kanade.tachiyomi.network.interceptor.rateLimit
+import keiyoushi.network.rateLimit
 import java.text.SimpleDateFormat
 import java.util.Locale
 
 class YaoiFlix :
     Madara(
         "Yaoi Flix",
-        "https://yaoiflix.bar",
+        "https://yaoiflix.fit",
         "tr",
         SimpleDateFormat("MMMM dd, yyyy", Locale("tr")),
     ) {

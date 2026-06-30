@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.extension.pt.bakai
 
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.asObservable
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -9,21 +10,18 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
 import keiyoushi.utils.tryParse
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import okhttp3.Response
+import rx.Observable
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 
-class Bakai : HttpSource() {
-
-    override val name = "Bakai"
-
-    override val baseUrl = "https://bakai.org"
-
-    override val lang = "pt-BR"
+@Source
+abstract class Bakai : HttpSource() {
 
     override val supportsLatest = true
 
@@ -85,7 +83,7 @@ class Bakai : HttpSource() {
     // =============================== Search ===============================
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
-        val url = "$baseUrl/search/".toHttpUrl().newBuilder()
+        val url = "$baseUrl/srch/".toHttpUrl().newBuilder()
             .addQueryParameter("q", query)
             .addQueryParameter("page", page.toString())
             .addQueryParameter("quick", "1")
@@ -122,6 +120,13 @@ class Bakai : HttpSource() {
         return MangasPage(mangas, hasNextPage)
     }
 
+    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> = client.newCall(searchMangaRequest(page, query, filters)).asObservable().map { response ->
+        if (response.code == 429) {
+            response.close()
+            throw Exception("Wait 1 second before retrying or login to speed up")
+        }
+        searchMangaParse(response)
+    }
     // =========================== Manga Details ============================
 
     override fun mangaDetailsParse(response: Response): SManga {
@@ -176,7 +181,7 @@ class Bakai : HttpSource() {
     override fun pageListParse(response: Response): List<Page> {
         val document = response.asJsoup()
 
-        return document.select("div.ipsGrid.ipsGrid_collapsePhone img.ImgMargem").mapIndexed { i, img ->
+        return document.select("div.ipsGrid.ipsGrid_collapsePhone img").mapIndexed { i, img ->
             val url = img.attr("abs:data-src").ifEmpty { img.attr("abs:src") }
             Page(i, imageUrl = url)
         }

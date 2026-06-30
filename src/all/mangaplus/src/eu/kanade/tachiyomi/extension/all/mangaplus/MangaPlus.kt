@@ -6,7 +6,6 @@ import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.asObservableSuccess
-import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -15,6 +14,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import keiyoushi.lib.i18n.Intl
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.getPreferencesLazy
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
@@ -36,6 +36,8 @@ class MangaPlus(
     private val langCode: Language,
 ) : HttpSource(),
     ConfigurableSource {
+    private val apiurlHost by lazy { API_URL.toHttpUrl().host }
+    private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
 
     override val name = "MANGA Plus by SHUEISHA"
 
@@ -49,11 +51,11 @@ class MangaPlus(
         .add("User-Agent", USER_AGENT)
         .add("SESSION-TOKEN", UUID.randomUUID().toString())
 
-    override val client: OkHttpClient = network.cloudflareClient.newBuilder()
+    override val client: OkHttpClient = network.client.newBuilder()
         .addInterceptor(::imageIntercept)
         .addInterceptor(::thumbnailIntercept)
-        .rateLimitHost(API_URL.toHttpUrl(), 1)
-        .rateLimitHost(baseUrl.toHttpUrl(), 2)
+        .rateLimit(1) { it.host == apiurlHost }
+        .rateLimit(2) { it.host == baseUrlHost }
         .build()
 
     private val json: Json by injectLazy()
@@ -146,12 +148,35 @@ class MangaPlus(
         page: Int,
         query: String,
         filters: FilterList,
-    ): Observable<MangasPage> = if (page == 1) {
-        client.newCall(searchMangaRequest(page, query, filters))
-            .asObservableSuccess()
-            .map { searchMangaParse(it, query) }
-    } else {
-        Observable.just(parseDirectory(page))
+    ): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host !in listOf(
+                    "mangaplus.shueisha.co.jp",
+                    "www.mangaplus.shueisha.co.jp",
+                    "jumpg-webapi.tokyo-cdn.com",
+                    "www.jumpg-webapi.tokyo-cdn.com",
+                )
+            ) {
+                throw Exception("Unsupported url")
+            }
+            val newQuery = when {
+                url.pathSegments.firstOrNull() == "viewer" ->
+                    PREFIX_CHAPTER_ID_SEARCH + url.pathSegments[1]
+                url.pathSegments.lastOrNull() == "sns_share" ->
+                    url.queryParameter("title_id")?.let { PREFIX_ID_SEARCH + it }
+                        ?: throw Exception("Unsupported url")
+                else -> PREFIX_ID_SEARCH + url.pathSegments[1]
+            }
+            return fetchSearchManga(page, newQuery, filters)
+        }
+        return if (page == 1) {
+            client.newCall(searchMangaRequest(page, query, filters))
+                .asObservableSuccess()
+                .map { searchMangaParse(it, query) }
+        } else {
+            Observable.just(parseDirectory(page))
+        }
     }
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {

@@ -11,6 +11,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
 import keiyoushi.utils.tryParse
 import okhttp3.Call
 import okhttp3.OkHttpClient
@@ -21,26 +22,24 @@ import rx.Observable
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * Code that used to handle Saturday Morning Breakfast Comics has been split to its
  * own separate extension at eu.kanade.tachiyomi.extension.en.saturdaymorningbreakfastcomics
  */
-class Hiveworks : HttpSource() {
+@Source
+abstract class Hiveworks : HttpSource() {
 
     // Info
 
-    override val name = "Hiveworks Comics"
-    override val baseUrl = "https://hiveworkscomics.com"
-    override val lang = "en"
     override val supportsLatest = true
 
     // Client
 
-    override val client: OkHttpClient = network.cloudflareClient.newBuilder()
-        .connectTimeout(1, TimeUnit.MINUTES)
-        .readTimeout(1, TimeUnit.MINUTES)
+    override val client: OkHttpClient = network.client.newBuilder()
+        .connectTimeout(1.minutes)
+        .readTimeout(1.minutes)
         .retryOnConnectionFailure(true)
         .followRedirects(true)
         .build()

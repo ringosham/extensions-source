@@ -1,7 +1,6 @@
 package eu.kanade.tachiyomi.extension.pt.leituramanga
 
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -9,6 +8,8 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.extractNextJs
 import keiyoushi.utils.parseAs
 import kotlinx.serialization.json.JsonObject
@@ -16,24 +17,18 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import okhttp3.Response
 import java.io.IOException
-import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.seconds
 
-class LeituraManga : HttpSource() {
-
-    override val name = "Leitura Mangá"
-
-    override val baseUrl = "https://leituramanga.net"
+@Source
+abstract class LeituraManga : HttpSource() {
 
     private val apiUrl = "https://api.leituramanga.net"
 
     private val cdnUrl = "https://cdn.leituramanga.net"
 
-    override val lang = "pt-BR"
-
     override val supportsLatest = true
 
     override val client = network.client.newBuilder()
-        .rateLimit(1, 2, TimeUnit.SECONDS)
         .addInterceptor { chain ->
             val response = chain.proceed(chain.request())
             when (response.code) {
@@ -49,6 +44,7 @@ class LeituraManga : HttpSource() {
             }
             response
         }
+        .rateLimit(1, 2.seconds)
         .build()
 
     override fun headersBuilder() = super.headersBuilder()

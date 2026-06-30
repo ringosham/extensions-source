@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.extension.pt.brasilhentai
 
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.asObservableSuccess
-import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -11,6 +10,8 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.firstInstanceOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -19,17 +20,12 @@ import okhttp3.Response
 import org.jsoup.nodes.Document
 import rx.Observable
 
-class BrasilHentai : HttpSource() {
-
-    override val name = "Brasil Hentai"
-
-    override val baseUrl = "https://brasilhentai.com"
-
-    override val lang = "pt-BR"
+@Source
+abstract class BrasilHentai : HttpSource() {
 
     override val supportsLatest = false
 
-    override val client: OkHttpClient = network.cloudflareClient.newBuilder()
+    override val client: OkHttpClient = network.client.newBuilder()
         .rateLimit(4)
         .build()
 
@@ -76,6 +72,14 @@ class BrasilHentai : HttpSource() {
     override fun searchMangaParse(response: Response): MangasPage = popularMangaParse(response)
 
     override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host != baseUrl.toHttpUrl().host) {
+                throw Exception("Unsupported url")
+            }
+            val item = url.pathSegments.last { it.isNotBlank() }
+            return fetchSearchManga(page, "$SEARCH_PREFIX$item", filters)
+        }
         if (query.startsWith(SEARCH_PREFIX)) {
             val url = "$baseUrl/${query.substringAfter(SEARCH_PREFIX)}/"
             return client.newCall(GET(url, headers))

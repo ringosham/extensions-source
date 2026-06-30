@@ -5,7 +5,6 @@ import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
-import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -15,9 +14,11 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.tryParse
 import okhttp3.FormBody
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -45,12 +46,12 @@ class Akuma(
 
     private var storedToken: String? = null
 
-    private val ddosGuardIntercept = DDosGuardInterceptor(network.cloudflareClient)
+    private val ddosGuardIntercept = DDosGuardInterceptor(network.client)
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ENGLISH).apply {
         timeZone = TimeZone.getTimeZone("UTC")
     }
-    override val client: OkHttpClient = network.cloudflareClient.newBuilder()
+    override val client: OkHttpClient = network.client.newBuilder()
         .addInterceptor(ddosGuardIntercept)
         .addInterceptor(::tokenInterceptor)
         .rateLimit(2)
@@ -174,7 +175,14 @@ class Akuma(
         page: Int,
         query: String,
         filters: FilterList,
-    ): Observable<MangasPage> = if (query.startsWith(PREFIX_ID)) {
+    ): Observable<MangasPage> = if (query.startsWith("https://")) {
+        val url = query.toHttpUrl()
+        if (url.host != baseUrl.toHttpUrl().host) {
+            throw Exception("Unsupported url")
+        }
+        val id = url.pathSegments[1]
+        fetchSearchManga(page, "$PREFIX_ID$id", filters)
+    } else if (query.startsWith(PREFIX_ID)) {
         val url = "/g/${query.substringAfter(PREFIX_ID)}"
         val manga = SManga.create().apply { this.url = url }
         fetchMangaDetails(manga).map {

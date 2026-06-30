@@ -5,7 +5,6 @@ import android.widget.Toast
 import androidx.preference.EditTextPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -15,6 +14,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.getPreferences
 import keiyoushi.utils.tryParse
 import okhttp3.CacheControl
@@ -26,17 +26,18 @@ import okhttp3.Response
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
-import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.seconds
 
 class TruyenQQ :
     HttpSource(),
     ConfigurableSource {
+    private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
 
     override val name: String = "TruyenQQ"
 
     override val lang: String = "vi"
 
-    private val defaultBaseUrl = "https://truyenqqno.com"
+    private val defaultBaseUrl = "https://truyenqqko.com"
 
     override val supportsLatest: Boolean = true
 
@@ -44,8 +45,8 @@ class TruyenQQ :
 
     override val baseUrl by lazy { getPrefBaseUrl() }
 
-    override val client: OkHttpClient = network.cloudflareClient.newBuilder()
-        .rateLimitHost(baseUrl.toHttpUrl(), 1, 2, TimeUnit.SECONDS)
+    override val client: OkHttpClient = network.client.newBuilder()
+        .rateLimit(1, 2.seconds) { it.host == baseUrlHost }
         .build()
 
     override fun headersBuilder(): Headers.Builder = super.headersBuilder().add("Referer", "$baseUrl/")

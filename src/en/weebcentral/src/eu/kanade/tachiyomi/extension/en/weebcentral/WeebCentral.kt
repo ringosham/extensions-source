@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.extension.en.weebcentral
 
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.asObservableSuccess
-import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -10,6 +9,8 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.tryParse
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -20,19 +21,16 @@ import rx.Observable
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+import kotlin.time.Duration.Companion.seconds
 
-class WeebCentral : HttpSource() {
-
-    override val name = "Weeb Central"
-
-    override val baseUrl = "https://weebcentral.com"
-
-    override val lang = "en"
+@Source
+abstract class WeebCentral : HttpSource() {
+    private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
 
     override val supportsLatest = true
 
-    override val client = network.cloudflareClient.newBuilder()
-        .rateLimitHost(baseUrl.toHttpUrl(), 1, 2)
+    override val client = network.client.newBuilder()
+        .rateLimit(1, 2.seconds) { it.host == baseUrlHost }
         .build()
 
     override fun headersBuilder() = super.headersBuilder()
@@ -65,6 +63,17 @@ class WeebCentral : HttpSource() {
     // =============================== Search ===============================
 
     override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host != baseUrlHost) {
+                throw Exception("Unsupported url")
+            }
+            val pathSegments = url.pathSegments
+            if (pathSegments.size < 3) {
+                throw Exception("Unsupported url")
+            }
+            return fetchSearchManga(page, "$URL_SEARCH_PREFIX${pathSegments[1]}/${pathSegments[2]}", filters)
+        }
         val pathSegment = query.takeIf { it.startsWith(URL_SEARCH_PREFIX) }
             ?.removePrefix(URL_SEARCH_PREFIX)
             ?: return super.fetchSearchManga(page, query, filters)
@@ -228,6 +237,9 @@ class WeebCentral : HttpSource() {
         sortFilter,
         SortOrderFilter(),
         OfficialTranslationFilter(),
+        AnimeAdaptationFilter(),
+        AdultContentFilter(),
+        AuthorFilter(),
         StatusFilter(),
         TypeFilter(),
         TagFilter(),

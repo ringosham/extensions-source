@@ -26,7 +26,7 @@ class WNACG :
 
     override val name = "紳士漫畫"
     override val lang = "zh"
-    override val supportsLatest = false
+    override val supportsLatest = true
 
     private val preferences = getPreferences { preferenceMigration() }
 
@@ -37,7 +37,7 @@ class WNACG :
 
     private val updateUrlInterceptor = UpdateUrlInterceptor(preferences)
 
-    override val client = network.cloudflareClient.newBuilder()
+    override val client = network.client.newBuilder()
         .addInterceptor(updateUrlInterceptor)
         .build()
 
@@ -49,7 +49,7 @@ class WNACG :
 
     // Popular
 
-    override fun popularMangaRequest(page: Int): Request = GET("$baseUrl/albums-favorite_ranking-$page-type-week.html", headers)
+    override fun popularMangaRequest(page: Int): Request = GET("$baseUrl/albums-favorite_ranking-page-$page-type-week.html", headers)
 
     override fun popularMangaParse(response: Response): MangasPage {
         val document = response.asJsoup()

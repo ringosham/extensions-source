@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.extension.all.kiutaku
 
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.asObservableSuccess
-import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -11,27 +10,23 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
+import keiyoushi.network.rateLimit
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Element
 import rx.Observable
 
-class Kiutaku : HttpSource() {
-
-    override val name = "Kiutaku"
-
-    override val baseUrl = "https://kiutaku.com"
-
-    override val lang = "all"
-
-    override val id = 3040035304874076216
+@Source
+abstract class Kiutaku : HttpSource() {
+    private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
 
     override val supportsLatest = true
 
     override val client by lazy {
-        network.cloudflareClient.newBuilder()
-            .rateLimitHost(baseUrl.toHttpUrl(), 2)
+        network.client.newBuilder()
+            .rateLimit(2) { it.host == baseUrlHost }
             .build()
     }
 
@@ -59,7 +54,14 @@ class Kiutaku : HttpSource() {
     override fun latestUpdatesParse(response: Response) = popularMangaParse(response)
 
     // =============================== Search ===============================
-    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> = if (query.startsWith(PREFIX_SEARCH)) {
+    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> = if (query.startsWith("https://")) {
+        val url = query.toHttpUrl()
+        if (url.host != baseUrlHost) {
+            throw Exception("Unsupported url")
+        }
+        val id = url.pathSegments.first()
+        fetchSearchManga(page, "$PREFIX_SEARCH$id", filters)
+    } else if (query.startsWith(PREFIX_SEARCH)) {
         val id = query.removePrefix(PREFIX_SEARCH)
         client.newCall(GET("$baseUrl/$id"))
             .asObservableSuccess()

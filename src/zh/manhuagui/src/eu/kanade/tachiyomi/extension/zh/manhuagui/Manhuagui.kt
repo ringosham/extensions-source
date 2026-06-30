@@ -7,7 +7,6 @@ import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.network.asObservableSuccess
-import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -18,6 +17,7 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.lib.lzstring.LZString
 import keiyoushi.lib.unpacker.Unpacker
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.firstInstanceOrNull
 import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.parseAs
@@ -41,6 +41,7 @@ import rx.Observable
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
+import kotlin.time.Duration.Companion.seconds
 
 class Manhuagui(
     override val name: String = "漫画柜",
@@ -75,15 +76,19 @@ class Manhuagui(
     init {
         val baseHttpUrl: HttpUrl = baseUrl.toHttpUrl()
         client =
-            network.cloudflareClient.newBuilder()
-                .rateLimitHost(baseHttpUrl, preferences.getString(MAINSITE_RATELIMIT_PREF, MAINSITE_RATELIMIT_DEFAULT_VALUE)!!.toInt(), 10)
-                .rateLimitHost(imageServer[0].toHttpUrl(), preferences.getString(IMAGE_CDN_RATELIMIT_PREF, IMAGE_CDN_RATELIMIT_DEFAULT_VALUE)!!.toInt())
-                .rateLimitHost(imageServer[1].toHttpUrl(), preferences.getString(IMAGE_CDN_RATELIMIT_PREF, IMAGE_CDN_RATELIMIT_DEFAULT_VALUE)!!.toInt())
+            network.client.newBuilder()
                 .apply {
                     if (getShowR18()) {
                         addNetworkInterceptor(AddCookieHeaderInterceptor(baseHttpUrl.host))
                     }
                 }
+                .rateLimit(
+                    preferences.getString(MAINSITE_RATELIMIT_PREF, MAINSITE_RATELIMIT_DEFAULT_VALUE)!!.toInt(),
+                    10.seconds,
+                ) { it.host == baseHttpUrl.host }
+                .rateLimit(
+                    preferences.getString(IMAGE_CDN_RATELIMIT_PREF, IMAGE_CDN_RATELIMIT_DEFAULT_VALUE)!!.toInt(),
+                ) { url -> url.host in imageServer.map { it.toHttpUrl().host } }
                 .build()
     }
 
@@ -265,13 +270,23 @@ class Manhuagui(
         return MangasPage(listOf(sManga), false)
     }
 
-    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> = if (query.startsWith(PREFIX_ID_SEARCH)) {
-        val id = query.removePrefix(PREFIX_ID_SEARCH)
-        client.newCall(searchMangaByIdRequest(id))
-            .asObservableSuccess()
-            .map { response -> searchMangaByIdParse(response, id) }
-    } else {
-        super.fetchSearchManga(page, query, filters)
+    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (!url.host.endsWith("manhuagui.com") && !url.host.endsWith("mhgui.com")) {
+                throw Exception("Unsupported url")
+            }
+            val titleid = url.pathSegments[1]
+            return fetchSearchManga(page, "$PREFIX_ID_SEARCH$titleid", filters)
+        }
+        return if (query.startsWith(PREFIX_ID_SEARCH)) {
+            val id = query.removePrefix(PREFIX_ID_SEARCH)
+            client.newCall(searchMangaByIdRequest(id))
+                .asObservableSuccess()
+                .map { response -> searchMangaByIdParse(response, id) }
+        } else {
+            super.fetchSearchManga(page, query, filters)
+        }
     }
 
     override fun chapterListParse(response: Response): List<SChapter> {

@@ -18,7 +18,7 @@ import okhttp3.Response
 import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
 import java.util.Locale
-import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.minutes
 
 class Mangafreak : HttpSource() {
     override val name: String = "Mangafreak"
@@ -33,9 +33,9 @@ class Mangafreak : HttpSource() {
 
     private val dateFormat = SimpleDateFormat("yyyy/MM/dd", Locale.US)
 
-    override val client: OkHttpClient = network.cloudflareClient.newBuilder()
-        .connectTimeout(1, TimeUnit.MINUTES)
-        .readTimeout(1, TimeUnit.MINUTES)
+    override val client: OkHttpClient = network.client.newBuilder()
+        .connectTimeout(1.minutes)
+        .readTimeout(1.minutes)
         .retryOnConnectionFailure(true)
         .followRedirects(true)
         .build()

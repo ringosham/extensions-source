@@ -12,30 +12,25 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
 import keiyoushi.utils.parseAs
-import okhttp3.OkHttpClient
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import rx.Observable
 
-class TencentComics : HttpSource() {
-
-    override val name = "腾讯动漫"
+@Source
+abstract class TencentComics : HttpSource() {
 
     // its easier to parse the mobile version of the website
-    override val baseUrl = "https://m.ac.qq.com"
 
     private val desktopUrl = "https://ac.qq.com"
-
-    override val lang = "zh-Hans"
 
     override val supportsLatest = true
 
     override val id: Long = 6353436350537369479
-
-    override val client: OkHttpClient = network.cloudflareClient
 
     override fun headersBuilder() = super.headersBuilder()
         .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36")
@@ -121,13 +116,23 @@ class TencentComics : HttpSource() {
 
     override fun imageUrlParse(response: Response) = throw UnsupportedOperationException()
 
-    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> = if (query.startsWith(ID_SEARCH_PREFIX)) {
-        val id = query.removePrefix(ID_SEARCH_PREFIX)
-        client.newCall(searchMangaByIdRequest(id))
-            .asObservableSuccess()
-            .map { response -> searchMangaByIdParse(response, id) }
-    } else {
-        super.fetchSearchManga(page, query, filters)
+    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host != baseUrl.toHttpUrl().host) {
+                throw Exception("Unsupported url")
+            }
+            val id = url.pathSegments[3]
+            return fetchSearchManga(page, "$ID_SEARCH_PREFIX$id", filters)
+        }
+        return if (query.startsWith(ID_SEARCH_PREFIX)) {
+            val id = query.removePrefix(ID_SEARCH_PREFIX)
+            client.newCall(searchMangaByIdRequest(id))
+                .asObservableSuccess()
+                .map { response -> searchMangaByIdParse(response, id) }
+        } else {
+            super.fetchSearchManga(page, query, filters)
+        }
     }
 
     private fun searchMangaByIdRequest(id: String) = GET("$baseUrl/comic/index/id/$id", headers)

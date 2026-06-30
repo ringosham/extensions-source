@@ -2,13 +2,14 @@ package eu.kanade.tachiyomi.extension.ar.waveteamy
 
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
-import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
+import keiyoushi.annotation.Source
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.extractNextJs
 import keiyoushi.utils.parseAs
 import keiyoushi.utils.tryParse
@@ -19,13 +20,11 @@ import okhttp3.Request
 import okhttp3.Response
 import java.text.SimpleDateFormat
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 import kotlin.io.encoding.Base64
+import kotlin.time.Duration.Companion.seconds
 
-class WaveTeamy : HttpSource() {
-    override val name = "WaveTeamy"
-    override val baseUrl = "https://waveteamy.com"
-    override val lang = "ar"
+@Source
+abstract class WaveTeamy : HttpSource() {
 
     private val cloudUrl = "https://wcloud.site"
 
@@ -36,9 +35,9 @@ class WaveTeamy : HttpSource() {
     private val oldDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.ENGLISH)
 
     override val client =
-        network.cloudflareClient
+        network.client
             .newBuilder()
-            .rateLimit(10, 1, TimeUnit.SECONDS)
+            .rateLimit(10, 1.seconds)
             .build()
 
     override fun headersBuilder() = super.headersBuilder()

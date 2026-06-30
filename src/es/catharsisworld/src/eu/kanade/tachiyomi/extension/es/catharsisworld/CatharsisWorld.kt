@@ -5,24 +5,26 @@ import android.widget.Toast
 import androidx.preference.EditTextPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.multisrc.madara.Madara
-import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.getPreferences
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
 import java.util.Locale
+import kotlin.time.Duration.Companion.seconds
 
 class CatharsisWorld :
     Madara(
         "Catharsis World",
-        "https://catharsisworld.lat",
+        "https://catharsisworld.dig-it.info",
         "es",
         SimpleDateFormat("MMMM dd, yyyy", Locale("es")),
     ),
     ConfigurableSource {
+    private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
 
     override val baseUrl get() = preferences.prefBaseUrl
 
@@ -34,7 +36,7 @@ class CatharsisWorld :
 
     override val client by lazy {
         super.client.newBuilder()
-            .rateLimitHost(baseUrl.toHttpUrl(), 3, 1)
+            .rateLimit(3, 1.seconds) { it.host == baseUrlHost }
             .build()
     }
 

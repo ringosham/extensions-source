@@ -9,19 +9,19 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.asResponseBody
 import rx.Observable
 
-class Xinmeitulu : HttpSource() {
-    override val baseUrl = "https://www.xinmeitulu.com"
-    override val lang = "all"
-    override val name = "Xinmeitulu"
+@Source
+abstract class Xinmeitulu : HttpSource() {
     override val supportsLatest = false
 
-    override val client = network.cloudflareClient.newBuilder().addInterceptor(::contentTypeIntercept).build()
+    override val client = network.client.newBuilder().addInterceptor(::contentTypeIntercept).build()
 
     // Latest
 
@@ -52,12 +52,24 @@ class Xinmeitulu : HttpSource() {
 
     override fun searchMangaParse(response: Response) = popularMangaParse(response)
 
-    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> = if (query.startsWith("SLUG:")) {
-        val slug = query.removePrefix("SLUG:")
-        client.newCall(GET("$baseUrl/photo/$slug", headers)).asObservableSuccess()
-            .map { response -> MangasPage(listOf(mangaDetailsParse(response)), false) }
-    } else {
-        super.fetchSearchManga(page, query, filters)
+    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host != baseUrl.toHttpUrl().host) {
+                throw Exception("Unsupported url")
+            }
+            val slug = url.pathSegments.getOrNull(1)
+                ?: throw Exception("Unsupported url")
+            return fetchSearchManga(page, "SLUG:$slug", filters)
+        }
+
+        return if (query.startsWith("SLUG:")) {
+            val slug = query.removePrefix("SLUG:")
+            client.newCall(GET("$baseUrl/photo/$slug", headers)).asObservableSuccess()
+                .map { response -> MangasPage(listOf(mangaDetailsParse(response)), false) }
+        } else {
+            super.fetchSearchManga(page, query, filters)
+        }
     }
 
     // Details

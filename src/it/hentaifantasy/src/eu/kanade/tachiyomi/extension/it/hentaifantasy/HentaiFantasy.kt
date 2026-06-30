@@ -9,22 +9,19 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
 import keiyoushi.utils.firstInstanceOrNull
 import keiyoushi.utils.tryParse
 import okhttp3.FormBody
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-class HentaiFantasy : HttpSource() {
-    override val name = "HentaiFantasy"
-    override val baseUrl = "https://hentaifantasy.it"
-    override val lang = "it"
+@Source
+abstract class HentaiFantasy : HttpSource() {
     override val supportsLatest = true
-    override val client: OkHttpClient = network.cloudflareClient
 
     companion object {
         private val pagesUrlPattern = Regex(""""url":"(.*?)"""")

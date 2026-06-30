@@ -12,7 +12,6 @@ import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
 import app.cash.quickjs.QuickJs
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -23,6 +22,8 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.lib.cookieinterceptor.CookieInterceptor
+import keiyoushi.network.rateLimit
+import keiyoushi.utils.decodeHex
 import keiyoushi.utils.getPreferencesLazy
 import okhttp3.Headers
 import okhttp3.HttpUrl
@@ -44,6 +45,7 @@ import javax.crypto.spec.SecretKeySpec
 class Mangago :
     HttpSource(),
     ConfigurableSource {
+    private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
 
     override val name = "Mangago"
 
@@ -56,8 +58,7 @@ class Mangago :
 
     private val preferences: SharedPreferences by getPreferencesLazy()
 
-    override val client = network.cloudflareClient.newBuilder()
-        .rateLimitHost(baseUrl.toHttpUrl(), 1)
+    override val client = network.client.newBuilder()
         .addInterceptor { chain ->
             val request = chain.request()
             val response = chain.proceed(request)
@@ -78,7 +79,9 @@ class Mangago :
         }
         .addNetworkInterceptor(
             CookieInterceptor(domain, "_m_superu" to "1"),
-        ).build()
+        )
+        .rateLimit(1) { it.host == baseUrlHost }
+        .build()
 
     override fun headersBuilder(): Headers.Builder = super.headersBuilder().apply {
         preferences.getString(PREF_KEY_CUSTOM_UA, null)?.takeIf { it.isNotBlank() }?.also {
@@ -583,14 +586,6 @@ class Mangago :
         result.compress(Bitmap.CompressFormat.JPEG, 100, output)
 
         return output.toByteArray()
-    }
-
-    private fun String.decodeHex(): ByteArray {
-        check(length % 2 == 0) { "Must have an even length" }
-
-        return chunked(2)
-            .map { it.toInt(16).toByte() }
-            .toByteArray()
     }
 
     private val jsFilters =

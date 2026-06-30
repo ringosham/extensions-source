@@ -9,9 +9,9 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
 import keiyoushi.utils.parseAs
 import keiyoushi.utils.tryParse
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -19,17 +19,10 @@ import okhttp3.Response
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-class InManga : HttpSource() {
-
-    override val name = "InManga"
-
-    override val baseUrl = "https://inmanga.com"
-
-    override val lang = "es"
+@Source
+abstract class InManga : HttpSource() {
 
     override val supportsLatest = true
-
-    override val client: OkHttpClient = network.cloudflareClient
 
     private val postHeaders = headers.newBuilder()
         .add("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")

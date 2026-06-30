@@ -3,7 +3,6 @@ package eu.kanade.tachiyomi.extension.tr.hattorimanga
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.network.asObservableSuccess
-import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -12,6 +11,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.network.rateLimit
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import okhttp3.FormBody
@@ -43,7 +43,7 @@ class HattoriManga : HttpSource() {
 
     private var genresList: List<Genre> = emptyList()
 
-    override val client: OkHttpClient = network.cloudflareClient.newBuilder()
+    override val client: OkHttpClient = network.client.newBuilder()
         .addInterceptor { chain ->
             val request = chain.request()
             if (!request.url.toString().contains("manga/search")) {
@@ -210,6 +210,15 @@ class HattoriManga : HttpSource() {
     }
 
     override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host != baseUrl.toHttpUrl().host) {
+                throw Exception("Unsupported url")
+            }
+            val item = url.pathSegments[1]
+            return fetchSearchManga(page, "$SEARCH_PREFIX$item", filters)
+        }
+
         if (query.startsWith(SEARCH_PREFIX)) {
             val slug = query.removePrefix(SEARCH_PREFIX)
             return client.newCall(GET("$baseUrl/manga/$slug", headers))

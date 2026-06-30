@@ -7,7 +7,6 @@ import androidx.preference.PreferenceScreen
 import com.github.stevenyomi.baozibanner.BaoziBanner
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.asObservableSuccess
-import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -16,6 +15,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.getPreferences
 import keiyoushi.utils.tryParse
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -53,11 +53,11 @@ class Baozi :
         level = preferences.getString(BaoziBanner.PREF, DEFAULT_LEVEL)!!.toInt(),
     )
 
-    override val client = network.cloudflareClient.newBuilder()
-        .rateLimit(2)
+    override val client = network.client.newBuilder()
         .addInterceptor(bannerInterceptor)
         .addNetworkInterceptor(MissingImageInterceptor)
         .addNetworkInterceptor(RedirectDomainInterceptor(domain))
+        .rateLimit(2)
         .build()
 
     override fun headersBuilder() = super.headersBuilder()
@@ -182,13 +182,27 @@ class Baozi :
 
     override fun imageUrlParse(response: Response) = throw UnsupportedOperationException()
 
-    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> = if (query.startsWith(ID_SEARCH_PREFIX)) {
-        val id = query.removePrefix(ID_SEARCH_PREFIX)
-        client.newCall(searchMangaByIdRequest(id))
-            .asObservableSuccess()
-            .map { response -> searchMangaByIdParse(response, id) }
-    } else {
-        super.fetchSearchManga(page, query, filters)
+    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host !in MIRRORS) {
+                throw Exception("Unsupported url")
+            }
+            val id = if (url.pathSegments[1] == "chapter") {
+                url.pathSegments[2]
+            } else {
+                url.pathSegments[1]
+            }
+            return fetchSearchManga(page, "$ID_SEARCH_PREFIX$id", filters)
+        }
+        return if (query.startsWith(ID_SEARCH_PREFIX)) {
+            val id = query.removePrefix(ID_SEARCH_PREFIX)
+            client.newCall(searchMangaByIdRequest(id))
+                .asObservableSuccess()
+                .map { response -> searchMangaByIdParse(response, id) }
+        } else {
+            super.fetchSearchManga(page, query, filters)
+        }
     }
 
     private fun searchMangaByIdRequest(id: String) = GET("$baseUrl/comic/$id", headers)

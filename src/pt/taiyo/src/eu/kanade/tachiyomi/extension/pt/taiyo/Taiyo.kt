@@ -8,7 +8,6 @@ import eu.kanade.tachiyomi.extension.pt.taiyo.dto.SearchResultDto
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.network.asObservableSuccess
-import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -16,6 +15,8 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.getPreferences
 import keiyoushi.utils.jsonInstance
 import keiyoushi.utils.parseAs
@@ -41,13 +42,10 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 
-class Taiyo : HttpSource() {
-
-    override val name = "Taiyō"
-
-    override val baseUrl = "https://taiyo.moe"
-
-    override val lang = "pt-BR"
+@Source
+abstract class Taiyo : HttpSource() {
+    private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
+    private val imgcdnHost by lazy { IMG_CDN.toHttpUrl().host }
 
     override val supportsLatest = false
 
@@ -55,10 +53,9 @@ class Taiyo : HttpSource() {
 
     private var bearerToken: String = preferences.getString(BEARER_TOKEN_PREF, "").toString()
 
-    override val client = network.cloudflareClient.newBuilder()
-        .rateLimitHost(baseUrl.toHttpUrl(), 2)
-        .rateLimitHost(IMG_CDN.toHttpUrl(), 2)
+    override val client = network.client.newBuilder()
         .addInterceptor(::authorizationInterceptor)
+        .rateLimit(2) { it.host == baseUrlHost || it.host == imgcdnHost }
         .build()
 
     // ============================== Popular ===============================
@@ -75,13 +72,23 @@ class Taiyo : HttpSource() {
 
     // =============================== Search ===============================
 
-    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> = if (query.startsWith(PREFIX_SEARCH)) {
-        val id = query.removePrefix(PREFIX_SEARCH)
-        client.newCall(GET("$baseUrl/media/$id"))
-            .asObservableSuccess()
-            .map(::searchMangaByIdParse)
-    } else {
-        super.fetchSearchManga(page, query, filters)
+    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host != baseUrlHost) {
+                throw Exception("Unsupported url")
+            }
+            val item = url.pathSegments[1]
+            return fetchSearchManga(page, "$PREFIX_SEARCH$item", filters)
+        }
+        return if (query.startsWith(PREFIX_SEARCH)) {
+            val id = query.removePrefix(PREFIX_SEARCH)
+            client.newCall(GET("$baseUrl/media/$id"))
+                .asObservableSuccess()
+                .map(::searchMangaByIdParse)
+        } else {
+            super.fetchSearchManga(page, query, filters)
+        }
     }
 
     private fun searchMangaByIdParse(response: Response): MangasPage {

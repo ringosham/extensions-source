@@ -1,7 +1,6 @@
 package eu.kanade.tachiyomi.extension.es.tenkaiscan
 
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -10,6 +9,8 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.firstInstanceOrNull
 import keiyoushi.utils.tryParse
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -19,25 +20,16 @@ import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-class FalcoScan : HttpSource() {
-
-    // Site change theme from Madara to custom theme
-    override val versionId = 3
-
-    override val name = "Falco Scan"
-
-    override val baseUrl = "https://falcoscan.net"
-
-    override val lang = "es"
+@Source
+abstract class FalcoScan : HttpSource() {
+    private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
 
     override val supportsLatest = true
 
-    override val id = 5992780069311625546
-
     private val dateFormat = SimpleDateFormat("dd/MM/yyyy", Locale("es"))
 
-    override val client = network.cloudflareClient.newBuilder()
-        .rateLimitHost(baseUrl.toHttpUrl(), 3)
+    override val client = network.client.newBuilder()
+        .rateLimit(3) { it.host == baseUrlHost }
         .build()
 
     override fun headersBuilder() = super.headersBuilder()

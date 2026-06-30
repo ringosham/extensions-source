@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.extension.es.hentaimode
 
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.asObservableSuccess
-import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -11,6 +10,8 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
+import keiyoushi.network.rateLimit
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import okhttp3.Response
@@ -18,18 +19,14 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import rx.Observable
 
-class HentaiMode : HttpSource() {
-
-    override val name = "HentaiMode"
-
-    override val baseUrl = "https://hentaimode.com"
-
-    override val lang = "es"
+@Source
+abstract class HentaiMode : HttpSource() {
+    private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
 
     override val supportsLatest = false
 
-    override val client = network.cloudflareClient.newBuilder()
-        .rateLimitHost(baseUrl.toHttpUrl(), 2)
+    override val client = network.client.newBuilder()
+        .rateLimit(2) { it.host == baseUrlHost }
         .build()
 
     override fun headersBuilder() = super.headersBuilder()
@@ -56,13 +53,23 @@ class HentaiMode : HttpSource() {
     override fun latestUpdatesParse(response: Response): MangasPage = throw UnsupportedOperationException()
 
     // =============================== Search ===============================
-    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> = if (query.startsWith(PREFIX_SEARCH)) { // URL intent handler
-        val id = query.removePrefix(PREFIX_SEARCH)
-        client.newCall(GET("$baseUrl/g/$id", headers))
-            .asObservableSuccess()
-            .map(::searchMangaByIdParse)
-    } else {
-        super.fetchSearchManga(page, query, filters)
+    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host != baseUrlHost) {
+                throw Exception("Unsupported url")
+            }
+            val item = url.pathSegments[1]
+            return fetchSearchManga(page, "$PREFIX_SEARCH$item", filters)
+        }
+        return if (query.startsWith(PREFIX_SEARCH)) { // URL intent handler
+            val id = query.removePrefix(PREFIX_SEARCH)
+            client.newCall(GET("$baseUrl/g/$id", headers))
+                .asObservableSuccess()
+                .map(::searchMangaByIdParse)
+        } else {
+            super.fetchSearchManga(page, query, filters)
+        }
     }
 
     private fun searchMangaByIdParse(response: Response): MangasPage {

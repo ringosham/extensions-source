@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.extension.es.jeazscans
 
 import android.util.Base64
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -10,6 +9,8 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.parseAs
 import keiyoushi.utils.tryParse
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -22,19 +23,12 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-class JeazScans : HttpSource() {
-
-    override val name = "Jeaz Scans"
-
-    override val baseUrl = "https://lectorhub.j5z.xyz"
-
-    override val lang = "es"
+@Source
+abstract class JeazScans : HttpSource() {
 
     override val supportsLatest = true
 
-    override val versionId = 2
-
-    override val client: OkHttpClient = network.cloudflareClient.newBuilder()
+    override val client: OkHttpClient = network.client.newBuilder()
         .rateLimit(2)
         .build()
 
@@ -169,6 +163,7 @@ class JeazScans : HttpSource() {
 
         val htmlPages = imageElements.mapIndexed { index, element ->
             val imageUrl = when {
+                element.hasAttr("data-verify") -> decodeVerifyToUrl(element.attr("data-verify"))
                 element.hasAttr("data-sec-src") -> element.attr("abs:data-sec-src")
                 element.hasAttr("data-src") -> element.attr("abs:data-src")
                 else -> element.attr("abs:src")

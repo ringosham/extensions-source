@@ -8,6 +8,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
 import keiyoushi.utils.tryParse
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
@@ -16,12 +17,8 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-class VyvyManga : HttpSource() {
-    override val name = "VyvyManga"
-
-    override val baseUrl = "https://vymanga.net"
-
-    override val lang = "en"
+@Source
+abstract class VyvyManga : HttpSource() {
 
     override val supportsLatest = true
 
@@ -100,7 +97,7 @@ class VyvyManga : HttpSource() {
         val document = response.asJsoup()
         return document.select(".list-group > a").map { element ->
             SChapter.create().apply {
-                setUrlWithoutDomain(element.absUrl("href"))
+                url = element.absUrl("href")
                 name = element.selectFirst("span")!!.text()
                 date_upload = parseChapterDate(element.selectFirst("> p")?.text())
             }
@@ -108,7 +105,10 @@ class VyvyManga : HttpSource() {
     }
 
     // Pages
-    override fun pageListRequest(chapter: SChapter): Request = GET(baseUrl + chapter.url, headers)
+    override fun pageListRequest(chapter: SChapter): Request {
+        if (!chapter.url.startsWith("http")) error("Refresh to reload chapters")
+        return GET(chapter.url, headers)
+    }
 
     override fun pageListParse(response: Response): List<Page> {
         val document = response.asJsoup()

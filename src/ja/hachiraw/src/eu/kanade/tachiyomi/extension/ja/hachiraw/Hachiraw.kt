@@ -9,6 +9,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
 import keiyoushi.utils.firstInstanceOrNull
 import keiyoushi.utils.tryParse
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -18,17 +19,10 @@ import rx.Observable
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-class Hachiraw : HttpSource() {
-
-    override val name = "Hachiraw"
-
-    override val baseUrl = "https://hachiraw.net"
-
-    override val lang = "ja"
+@Source
+abstract class Hachiraw : HttpSource() {
 
     override val supportsLatest = true
-
-    override val client = network.cloudflareClient
 
     override fun headersBuilder() = super.headersBuilder()
         .add("Referer", "$baseUrl/")
@@ -55,17 +49,28 @@ class Hachiraw : HttpSource() {
         page: Int,
         query: String,
         filters: FilterList,
-    ): Observable<MangasPage> = if (query.startsWith(PREFIX_SLUG_SEARCH)) {
-        val slug = query.removePrefix(PREFIX_SLUG_SEARCH)
-        val manga = SManga.create().apply { url = "/manga/$slug" }
-
-        fetchMangaDetails(manga)
-            .map {
-                it.url = "/manga/$slug"
-                MangasPage(listOf(it), false)
+    ): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host != baseUrl.toHttpUrl().host) {
+                throw Exception("Unsupported url")
             }
-    } else {
-        super.fetchSearchManga(page, query, filters)
+            val slug = url.pathSegments[1]
+            return fetchSearchManga(page, "$PREFIX_SLUG_SEARCH$slug", filters)
+        }
+
+        return if (query.startsWith(PREFIX_SLUG_SEARCH)) {
+            val slug = query.removePrefix(PREFIX_SLUG_SEARCH)
+            val manga = SManga.create().apply { url = "/manga/$slug" }
+
+            fetchMangaDetails(manga)
+                .map {
+                    it.url = "/manga/$slug"
+                    MangasPage(listOf(it), false)
+                }
+        } else {
+            super.fetchSearchManga(page, query, filters)
+        }
     }
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {

@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.extension.ru.unicomics
 
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.asObservableSuccess
-import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -10,28 +9,26 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
+import keiyoushi.network.rateLimit
 import okhttp3.Headers
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Element
 import rx.Observable
-import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.seconds
 
-class UniComics : HttpSource() {
-
-    override val name = "UniComics"
-
-    override val baseUrl = "https://unicomics.ru"
-
-    override val lang = "ru"
+@Source
+abstract class UniComics : HttpSource() {
 
     override val supportsLatest = true
 
-    override val client: OkHttpClient = network.cloudflareClient.newBuilder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+    override val client: OkHttpClient = network.client.newBuilder()
+        .connectTimeout(10.seconds)
+        .readTimeout(30.seconds)
         .rateLimit(3)
         .build()
 
@@ -160,6 +157,14 @@ class UniComics : HttpSource() {
     }
 
     override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host != baseUrl.toHttpUrl().host) {
+                throw Exception("Unsupported url")
+            }
+            val titleid = url.pathSegments[2]
+            return fetchSearchManga(page, "$PREFIX_SLUG_SEARCH$titleid", filters)
+        }
         if (query.startsWith(PREFIX_SLUG_SEARCH)) {
             val realQuery = query.removePrefix(PREFIX_SLUG_SEARCH)
             return client.newCall(GET("$baseUrl$PATH_URL$realQuery", headers))

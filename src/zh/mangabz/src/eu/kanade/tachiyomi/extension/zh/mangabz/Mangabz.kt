@@ -3,7 +3,6 @@ package eu.kanade.tachiyomi.extension.zh.mangabz
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.asObservableSuccess
-import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -13,6 +12,7 @@ import eu.kanade.tachiyomi.source.model.SManga
 import keiyoushi.lib.cookieinterceptor.CookieInterceptor
 import keiyoushi.lib.unpacker.SubstringExtractor
 import keiyoushi.lib.unpacker.Unpacker
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.getPreferences
 import okhttp3.Headers
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -43,9 +43,9 @@ class Mangabz :
         urlSuffix = mirror.urlSuffix
 
         val cookieInterceptor = CookieInterceptor(mirror.domain, mirror.langCookie to preferences.lang)
-        client = network.cloudflareClient.newBuilder()
-            .rateLimit(5)
+        client = network.client.newBuilder()
             .addNetworkInterceptor(cookieInterceptor)
+            .rateLimit(5)
             .build()
     }
 
@@ -66,6 +66,14 @@ class Mangabz :
     }
 
     override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (MIRRORS.none { it.domain == url.host }) {
+                throw Exception("Unsupported url")
+            }
+            val titleId = url.pathSegments[0]
+            return fetchSearchManga(page, "$PREFIX_ID_SEARCH$titleId", filters)
+        }
         if (query.isEmpty()) {
             val ids = parseFilterList(filters)
             if (ids.isEmpty()) return fetchPopularManga(page)

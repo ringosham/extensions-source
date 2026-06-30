@@ -6,7 +6,6 @@ import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.asObservableSuccess
-import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -15,6 +14,7 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.getPreferences
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
@@ -38,6 +38,8 @@ import kotlin.text.matches
 class Desu :
     HttpSource(),
     ConfigurableSource {
+    private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
+
     override val name = "Desu"
 
     override val id: Long = 6684416167758830305
@@ -74,8 +76,8 @@ class Desu :
     }
 
     override val client: OkHttpClient =
-        network.cloudflareClient.newBuilder()
-            .rateLimitHost(baseUrl.toHttpUrl(), 3)
+        network.client.newBuilder()
+            .rateLimit(3) { it.host == baseUrlHost }
             .build()
 
     private fun MangaDetDto.toSManga(genresStr: String? = "", authorsStr: String? = null): SManga {
@@ -262,21 +264,31 @@ class Desu :
 
     private fun searchMangaByIdRequest(id: String): Request = GET("$baseUrl$API_URL/$id", headers)
 
-    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> = if (query.startsWith(PREFIX_SLUG_SEARCH)) {
-        val realQuery = query.removePrefix(PREFIX_SLUG_SEARCH)
-        client.newCall(searchMangaByIdRequest(realQuery))
-            .asObservableSuccess()
-            .map { response ->
-                val details = mangaDetailsParse(response)
-                details.url = "/$realQuery"
-                MangasPage(listOf(details), false)
+    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host != baseUrlHost) {
+                throw Exception("Unsupported url")
             }
-    } else {
-        client.newCall(searchMangaRequest(page, query, filters))
-            .asObservableSuccess()
-            .map { response ->
-                searchMangaParse(response)
-            }
+            val titleid = url.pathSegments[1]
+            return fetchSearchManga(page, "$PREFIX_SLUG_SEARCH$titleid", filters)
+        }
+        return if (query.startsWith(PREFIX_SLUG_SEARCH)) {
+            val realQuery = query.removePrefix(PREFIX_SLUG_SEARCH)
+            client.newCall(searchMangaByIdRequest(realQuery))
+                .asObservableSuccess()
+                .map { response ->
+                    val details = mangaDetailsParse(response)
+                    details.url = "/$realQuery"
+                    MangasPage(listOf(details), false)
+                }
+        } else {
+            client.newCall(searchMangaRequest(page, query, filters))
+                .asObservableSuccess()
+                .map { response ->
+                    searchMangaParse(response)
+                }
+        }
     }
 
     private class OrderBy :

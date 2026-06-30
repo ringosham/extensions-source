@@ -4,7 +4,6 @@ import android.content.SharedPreferences
 import androidx.preference.EditTextPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -13,6 +12,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.firstInstanceOrNull
 import keiyoushi.utils.getPreferences
 import keiyoushi.utils.tryParse
@@ -54,7 +54,7 @@ class LxHentai :
         }
     }
 
-    override val client = network.cloudflareClient.newBuilder()
+    override val client = network.client.newBuilder()
         .rateLimit(3)
         .build()
 
@@ -75,18 +75,29 @@ class LxHentai :
 
     // ============================== Search ================================
 
-    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> = when {
-        query.startsWith(PREFIX_ID_SEARCH) -> {
-            val slug = query.substringAfter(PREFIX_ID_SEARCH)
-            val mangaUrl = "/truyen/$slug"
-            fetchMangaDetails(SManga.create().apply { url = mangaUrl })
-                .map {
-                    it.url = mangaUrl
-                    it.initialized = true
-                    MangasPage(listOf(it), false)
-                }
+    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host != baseUrl.toHttpUrl().host) {
+                throw Exception("Unsupported url")
+            }
+            val id = url.pathSegments[1]
+            return fetchSearchManga(page, "$PREFIX_ID_SEARCH$id", filters)
         }
-        else -> super.fetchSearchManga(page, query, filters)
+
+        return when {
+            query.startsWith(PREFIX_ID_SEARCH) -> {
+                val slug = query.substringAfter(PREFIX_ID_SEARCH)
+                val mangaUrl = "/truyen/$slug"
+                fetchMangaDetails(SManga.create().apply { url = mangaUrl })
+                    .map {
+                        it.url = mangaUrl
+                        it.initialized = true
+                        MangasPage(listOf(it), false)
+                    }
+            }
+            else -> super.fetchSearchManga(page, query, filters)
+        }
     }
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
@@ -257,10 +268,6 @@ class LxHentai :
                 .toList()
         }.getOrDefault(emptyList())
 
-        // Token that images require as the `Token` header must come from /get_token, which
-        // is gated behind Cloudflare Turnstile. Run the chapter page in a headless WebView
-        // so the site's own JS solves Turnstile, calls /get_token and exposes the result via
-        // window.actionToken (and the decoded URLs via window.__imgSrcs).
         val webViewData = TokenResolver.resolve(chapterUrl)
 
         val imageUrls = webViewData.srcs.filter { it.isNotBlank() }
@@ -328,7 +335,7 @@ class LxHentai :
 
     private fun decodePageMetadata(rawMetadata: String): Pair<String, String> {
         val separatorIndex = rawMetadata.lastIndexOf('\n')
-        if (separatorIndex <= 0 || separatorIndex == rawMetadata.lastIndex) {
+        if (separatorIndex <= 0) {
             throw Exception("Không đọc được thông tin token ảnh")
         }
 

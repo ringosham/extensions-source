@@ -1,7 +1,6 @@
 package eu.kanade.tachiyomi.extension.en.vizshonenjump
 
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -9,6 +8,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.parseAs
 import keiyoushi.utils.tryParse
 import okhttp3.CacheControl
@@ -22,7 +22,7 @@ import rx.Observable
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
-import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.seconds
 
 open class Viz(
     final override val name: String,
@@ -35,12 +35,12 @@ open class Viz(
 
     override val supportsLatest = true
 
-    override val client: OkHttpClient = network.cloudflareClient.newBuilder()
+    override val client: OkHttpClient = network.client.newBuilder()
         .addInterceptor(::headersIntercept)
         .addInterceptor(::authCheckIntercept)
         .addInterceptor(::authChapterCheckIntercept)
         .addInterceptor(VizImageInterceptor())
-        .rateLimit(1, 1, TimeUnit.SECONDS)
+        .rateLimit(1, 1.seconds)
         .build()
 
     override fun headersBuilder(): Headers.Builder = super.headersBuilder()
@@ -88,6 +88,22 @@ open class Viz(
     override fun latestUpdatesParse(response: Response): MangasPage = popularMangaParse(response)
 
     override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host != baseUrl.toHttpUrl().host) {
+                throw Exception("Unsupported url")
+            }
+            val pathSegments = url.pathSegments
+            if (pathSegments.size < 3) {
+                throw Exception("Unsupported url")
+            }
+            val seriesSlug = if (pathSegments[2] == "chapter" && pathSegments[1].contains("-chapter-")) {
+                pathSegments[1].substringBeforeLast("-chapter-")
+            } else {
+                pathSegments[2]
+            }
+            return fetchSearchManga(page, "$PREFIX_URL_SEARCH/${pathSegments[0]}/chapters/$seriesSlug", filters)
+        }
         if (query.startsWith(PREFIX_URL_SEARCH)) {
             val url = query.substringAfter(PREFIX_URL_SEARCH)
             val service = url.split("/")[1]
@@ -246,7 +262,7 @@ open class Viz(
 
         val loginCheckRequest = GET("$baseUrl/$REFRESH_LOGIN_LINKS_URL", refreshHeaders)
         try {
-            network.cloudflareClient.newCall(loginCheckRequest).execute().use { response ->
+            network.client.newCall(loginCheckRequest).execute().use { response ->
                 val document = response.asJsoup()
                 loggedIn = document.selectFirst("div#o_account-links-content")
                     ?.attr("logged_in")?.toBoolean() ?: false

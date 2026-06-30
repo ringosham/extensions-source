@@ -1,13 +1,14 @@
 package eu.kanade.tachiyomi.extension.es.nexusscanlation
 
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
+import keiyoushi.annotation.Source
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.parseAs
 import keiyoushi.utils.tryParse
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -17,19 +18,20 @@ import okhttp3.Response
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
+import kotlin.time.Duration.Companion.seconds
 
-class Nexusscanlation : HttpSource() {
+@Source
+abstract class Nexusscanlation : HttpSource() {
+    private val apiBaseUrlHost by lazy { apiBaseUrl.toHttpUrl().host }
 
-    override val name = "NexusScanlation"
-    override val baseUrl = "https://nexusscanlation.com"
-    override val lang = "es"
     override val supportsLatest = true
 
     private val apiBaseUrl = "https://api.nexusscanlation.com/api/v1"
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT)
 
-    override val client: OkHttpClient = network.cloudflareClient.newBuilder()
-        .rateLimitHost(apiBaseUrl.toHttpUrl(), 1, 3) // API: max 1 request per 3 seconds
+    override val client: OkHttpClient = network.client.newBuilder()
+        .addInterceptor(ImageInterceptor())
+        .rateLimit(1, 3.seconds) { it.host == apiBaseUrlHost } // API: max 1 request per 3 seconds
         .build()
 
     override fun headersBuilder() = super.headersBuilder()
@@ -166,7 +168,21 @@ class Nexusscanlation : HttpSource() {
             throw IOException("Premium chapter. Not available.")
         }
 
-        return chapterPagesDto.paginas.orEmpty().mapIndexed { index, page -> Page(index, imageUrl = page.url) }
+        return chapterPagesDto.paginas.orEmpty().mapIndexed { index, page ->
+            val imageUrl = buildString {
+                append(page.url)
+                page.scrambledData?.let {
+                    append("#scramble=")
+                    append(it.columns)
+                    append(',')
+                    append(it.rows)
+                    append(',')
+                    append(it.seed)
+                }
+            }
+
+            Page(index, imageUrl = imageUrl)
+        }
     }
 
     // ======================= Helpers =======================================

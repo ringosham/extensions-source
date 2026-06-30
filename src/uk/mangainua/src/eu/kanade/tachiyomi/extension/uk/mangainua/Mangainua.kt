@@ -14,6 +14,8 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.tryParse
 import okhttp3.FormBody
@@ -25,22 +27,23 @@ import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
 import java.util.Locale
 import kotlin.getValue
+import kotlin.time.Duration.Companion.seconds
 
-class Mangainua :
+@Source
+abstract class Mangainua :
     HttpSource(),
     ConfigurableSource {
     // Info
-    override val name = "MANGA/in/UA"
-    override val baseUrl = "https://manga.in.ua"
-    override val lang = "uk"
     override val supportsLatest = true
 
     private val preferences by getPreferencesLazy()
 
     override fun headersBuilder() = super.headersBuilder()
-        .add("Referer", baseUrl)
+        .add("Origin", "$baseUrl/")
+        .add("Referer", "$baseUrl/")
 
-    override val client = network.cloudflareClient.newBuilder()
+    override val client = network.client.newBuilder()
+        .rateLimit(1, 2.seconds)
         .build()
 
     // ============================== Popular ===============================
@@ -58,7 +61,7 @@ class Mangainua :
 
     override fun searchMangaParse(response: Response) = mangaParse(response, true)
 
-    private fun makeSearchRequest(sortBy: String? = null, page: Int, query: String = "", filters: FilterList = FilterList()): Request {
+    private fun makeSearchRequest(sortBy: String? = null, page: Int, query: String = "", filters: FilterList? = null): Request {
         // Search by title
         if (query.isNotEmpty()) {
             if (query.length < 3) {
@@ -81,33 +84,25 @@ class Mangainua :
 
         // Search by filters
         val url = "$baseUrl/filter".toHttpUrl().newBuilder().apply {
-            val ignoredTagsSettings = ignoreTags()
-            (if (filters.isEmpty()) getFilterList() else filters).forEach { filter ->
+            filters?.forEach { filter ->
                 when (filter) {
                     is TagFilter -> {
                         filter.included?.let { addPathSegment("cat=${it.joinToString(",")}") }
-                        filter.excluded?.let {
-                            val filter = when {
-                                ignoredTagsSettings.isNotEmpty() -> (ignoredTagsSettings + it).distinct().joinToString(",")
-                                else -> it.joinToString(",")
-                            }
-                            addPathSegment("!cat=$filter")
-                        } ?: run {
-                            if (ignoredTagsSettings.isNotEmpty()) {
-                                addPathSegment("!cat=${ignoredTagsSettings.joinToString(",")}")
-                            }
-                        }
+                        filter.excluded?.let { addPathSegment("!cat=${it.joinToString(",")}") }
                     }
                     is StatusFilter -> filter.selected?.let { addPathSegment("b.tra=$it") }
                     is CategoriesFilter -> filter.selected?.let { addPathSegment("b.type=$it") }
                     is AgeFilter -> filter.selected?.let { addPathSegment("b.vik=$it") }
                     is SizeFilter -> filter.selected?.let { addPathSegment("c.lastchappr=$it") }
                     is YearsFilter -> filter.selected?.let { addPathSegment("c.yer=$it") }
-                    is SortFilter -> {
-                        addPathSegment("sort=${sortBy ?: filter.selected}")
-                    }
+                    is SortFilter -> addPathSegment("sort=${filter.selected}")
                     else -> {}
                 }
+            }
+            if (filters.isNullOrEmpty()) {
+                val ignoredTagsSettings = ignoreTags()
+                if (ignoredTagsSettings.isNotEmpty()) addPathSegment("!cat=${ignoredTagsSettings.joinToString(",")}")
+                addPathSegment("sort=$sortBy")
             }
             if (page > 1) addPathSegments("page/$page/")
         }.build()
@@ -145,9 +140,7 @@ class Mangainua :
             setUrlWithoutDomain(attr("href"))
             title = text()
         }
-        thumbnail_url = element.selectFirst("img")?.run {
-            absUrl("data-src").ifEmpty { absUrl("src") }
-        }
+        thumbnail_url = element.selectFirst("img")?.imgAttr()
     }
 
     // ============================== Manga Details ======================================
@@ -155,11 +148,9 @@ class Mangainua :
     override fun mangaDetailsParse(response: Response) = SManga.create().apply {
         val document = response.asJsoup()
         title = document.selectFirst("span.UAName")!!.ownText()
-        author = "Невідомо"
-        artist = "Невідомо"
         description = document.selectFirst("div.item__full-description p")?.wholeText()
-        thumbnail_url = document.selectFirst("div.item__full-sidebar--poster img")?.attr("abs:data-src")
-        status = when (document.getInfoElement("Статус перекладу:")?.ownText()?.trim()) {
+        thumbnail_url = document.selectFirst("div.item__full-sidebar--poster img")?.imgAttr()
+        status = when (document.getInfoElement("Статус перекладу:")?.text()) {
             "Триває" -> SManga.ONGOING
             "Заморожено" -> SManga.ON_HIATUS
             "Покинуто" -> SManga.CANCELLED
@@ -178,17 +169,22 @@ class Mangainua :
 
     override fun chapterListParse(response: Response): List<SChapter> {
         val newResponse = getAjaxChapters(response)
-        return newResponse.asJsoup().select("div.ltcitems").asReversed().map { element ->
-            SChapter.create().apply {
-                val urlElement = element.selectFirst("a")!!
-                val chapterName = urlElement.ownText().trim()
-                val chapterNumber = element.attr("manga-chappter")
-                val volumeNumber = element.attr("manga-tom")
+        return newResponse.asJsoup().select("div.ltcitems").asReversed().mapNotNull { element ->
+            val urlElement = element.selectFirst("a") ?: return@mapNotNull null // Skip if no URL element
+            val chapterName = urlElement.ownText().trim()
+            val chapterNumber = element.attr("manga-chappter")
+            val volumeNumber = element.attr("manga-tom")
 
+            // Skip creating SChapter if both chapterNumber and volumeNumber are empty
+            if (chapterNumber.isEmpty() && volumeNumber.isEmpty()) {
+                return@mapNotNull null
+            }
+
+            SChapter.create().apply {
                 setUrlWithoutDomain(urlElement.attr("abs:href"))
                 scanlator = element.attr("translate").takeUnless(String::isBlank) ?: urlElement.text().substringAfter("від:").trim()
                 date_upload = parseDate(element.child(0).ownText())
-                chapter_number = chapterNumber.toFloat()
+                chapter_number = chapterNumber.toFloatOrNull() ?: 0f
                 name = when {
                     chapterName.contains("Альтернативний") -> "Том $volumeNumber. Розділ $chapterNumber"
                     else -> chapterName
@@ -257,7 +253,7 @@ class Mangainua :
         Filter.Header("Фільтри не застосовуються під час пошуку за назвою"),
         CategoriesFilter(),
         StatusFilter(),
-        TagFilter(),
+        TagFilter(ignoreTags()),
         SortFilter("news_read;desc"),
         SizeFilter(),
         AgeFilter(),
@@ -273,6 +269,11 @@ class Mangainua :
 
         return userHashQueryRegex.find(script)?.groupValues?.get(1)
             ?: throw Exception("Couldn't find user hash query!")
+    }
+
+    private fun Element.imgAttr(): String = when {
+        hasAttr("data-src") -> absUrl("data-src")
+        else -> absUrl("src")
     }
 
     private fun ignoreTags(): Set<String> = preferences.getStringSet(SITE_TAGS_PREF, emptySet<String>())!!

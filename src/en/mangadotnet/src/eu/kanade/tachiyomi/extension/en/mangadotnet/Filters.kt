@@ -13,9 +13,9 @@ class SortFilter :
 }
 
 private val sortOrders = listOf(
-    "Relevance" to "relevance",
-    "Alphabetical" to "alphabetical",
+    "Relevance" to "",
     "Latest Update" to "latest",
+    "Alphabetical" to "alphabetical",
     "Total Chapters" to "chapters",
     "Most Viewed" to "views",
     "Most Tracked" to "tracked",
@@ -41,7 +41,7 @@ class TypeCheckBox(name: String, val value: String) : Filter.CheckBox(name)
 
 class TypeFilter :
     Filter.Group<TypeCheckBox>(
-        "Type",
+        "Types",
         types.map { TypeCheckBox(it.first, it.second) },
     ) {
     val checked get() = state.filter { it.state }.map { it.value }
@@ -54,13 +54,46 @@ private val types = listOf(
     "One Shot" to "ONESHOT",
 )
 
-class TriStateFilter(name: String, val value: String = name) : Filter.TriState(name)
+class TriStateFilter(name: String, val value: String = name, state: Int = STATE_IGNORE) : Filter.TriState(name, state)
 
-class GenreFilter(genreValues: List<String>) :
+class DemographicFilter(excluded: Set<String> = emptySet()) :
     Filter.Group<TriStateFilter>(
-        name = "Genre",
-        state = genreValues.map { TriStateFilter(it) },
+        name = "Demographics",
+        state = demographics.map { demo ->
+            val state = if (demo in excluded) TriState.STATE_EXCLUDE else TriState.STATE_IGNORE
+            TriStateFilter(demo, state = state)
+        },
     ) {
     val included get() = state.filter { it.isIncluded() }.map { it.value }
     val excluded get() = state.filter { it.isExcluded() }.map { it.value }
 }
+
+private val demographics = listOf("Josei", "Seinen", "Shoujo", "Shounen")
+
+class GenreFilter(genreValues: List<String>, excluded: Set<String>) :
+    Filter.Group<TriStateFilter>(
+        name = "Genres",
+        state = genreValues.map { genre ->
+            val state = if (genre in excluded) TriState.STATE_EXCLUDE else TriState.STATE_IGNORE
+            TriStateFilter(genre, state = state)
+        },
+    ) {
+    val included get() = state.filter { it.isIncluded() }.map { it.value }
+    val excluded get() = state.filter { it.isExcluded() }.map { it.value }
+}
+
+class TagFilter(name: String, tagValues: List<String>, excluded: Set<String> = emptySet()) :
+    Filter.Group<TriStateFilter>(
+        name = name,
+        state = tagValues.map { tag ->
+            val state = if (tag in excluded) TriState.STATE_EXCLUDE else TriState.STATE_IGNORE
+            TriStateFilter(tag, state = state)
+        },
+    ) {
+    val included get() = state.filter { it.isIncluded() }.map { it.value }
+    val excluded get() = state.filter { it.isExcluded() }.map { it.value }
+}
+
+class AuthorFilter : Filter.Text("Author")
+
+class ArtistFilter : Filter.Text("Artist")

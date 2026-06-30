@@ -13,6 +13,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
 import keiyoushi.utils.firstInstanceOrNull
 import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.tryParse
@@ -22,21 +23,12 @@ import java.nio.charset.Charset
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-class MangaOni :
+@Source
+abstract class MangaOni :
     HttpSource(),
     ConfigurableSource {
 
-    override val name = "MangaOni"
-
-    override val id: Long = 2202687009511923782
-
-    override val baseUrl = "https://manga-oni.com"
-
-    override val lang = "es"
-
     override val supportsLatest = true
-
-    override val client = network.cloudflareClient
 
     private val preferences: SharedPreferences by getPreferencesLazy()
 
@@ -122,8 +114,9 @@ class MangaOni :
             document.select("#article-div > div").map { element ->
                 SManga.create().apply {
                     thumbnail_url = element.select("img").attr("abs:src")
-                    element.selectFirst("div a")?.also {
-                        title = it.text()
+                    title = element.select("a").firstOrNull { it.text().isNotBlank() }?.text()
+                        ?: throw Exception("Title not found")
+                    element.selectFirst("a")?.also {
                         setUrlWithoutDomain(it.attr("abs:href"))
                     }
                 }
@@ -139,6 +132,7 @@ class MangaOni :
         val document = response.asJsoup()
 
         return SManga.create().apply {
+            title = document.selectFirst("h1")?.text() ?: throw Exception("Title not found")
             thumbnail_url = document.select("img[src*=cover]").attr("abs:src")
             description = document.select("div#sinopsis").lastOrNull()?.ownText()
             author = document.select("div#info-i").text().let {

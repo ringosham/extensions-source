@@ -1,8 +1,13 @@
 package eu.kanade.tachiyomi.extension.ru.mangabuff
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import androidx.preference.PreferenceScreen
+import androidx.preference.SwitchPreferenceCompat
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.network.asObservableSuccess
+import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -11,14 +16,19 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
 import keiyoushi.utils.firstInstanceOrNull
+import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.parseAs
 import keiyoushi.utils.tryParse
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.Response
+import okhttp3.ResponseBody.Companion.asResponseBody
+import okio.Buffer
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import rx.Observable
@@ -26,18 +36,20 @@ import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-class MangaBuff : HttpSource() {
-    override val baseUrl = "https://mangabuff.ru"
-    override val lang = "ru"
-    override val name = "MangaBuff"
+@Source
+abstract class MangaBuff :
+    HttpSource(),
+    ConfigurableSource {
     override val supportsLatest = true
 
-    override val client = network.cloudflareClient.newBuilder()
+    override val client = network.client.newBuilder()
         .addInterceptor(::tokenInterceptor)
+        .addInterceptor(::gifToWebpInterceptor)
         .build()
 
     // From Akuma - CSRF token
     private var storedToken: String? = null
+    private val preferences by getPreferencesLazy()
 
     private fun tokenInterceptor(chain: Interceptor.Chain): Response {
         val request = chain.request()
@@ -66,6 +78,27 @@ class MangaBuff : HttpSource() {
         }
 
         return chain.proceed(request)
+    }
+
+    private fun gifToWebpInterceptor(chain: Interceptor.Chain): Response {
+        val response = chain.proceed(chain.request())
+
+        if (!imgConvert()) return response
+
+        val isGif = response.body.contentType()?.subtype?.lowercase() == "gif" ||
+            response.request.url.pathSegments.lastOrNull()?.endsWith(".gif", ignoreCase = true) == true
+
+        if (!isGif) return response
+
+        val original = response.body.use { body ->
+            BitmapFactory.decodeStream(body.byteStream())
+                ?: throw IOException("Failed to decode GIF")
+        }
+
+        val buffer = Buffer()
+        original.compress(Bitmap.CompressFormat.WEBP, 90, buffer.outputStream())
+        original.recycle()
+        return response.newBuilder().body(buffer.asResponseBody(WEBP_MEDIA_TYPE, buffer.size)).build()
     }
 
     private fun getToken(): String {
@@ -102,6 +135,14 @@ class MangaBuff : HttpSource() {
         query: String,
         filters: FilterList,
     ): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host != baseUrl.toHttpUrl().host) {
+                throw Exception("Unsupported url")
+            }
+            val slug = url.pathSegments[1]
+            return fetchSearchManga(page, "$SEARCH_PREFIX$slug", filters)
+        }
         if (!query.startsWith(SEARCH_PREFIX)) {
             return super.fetchSearchManga(page, query, filters)
         }
@@ -322,8 +363,22 @@ class MangaBuff : HttpSource() {
         else -> absUrl("src")
     }
 
+    private fun imgConvert(): Boolean = preferences.getBoolean(CONVERT_IMG_PREF, true)
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        SwitchPreferenceCompat(screen.context).apply {
+            key = CONVERT_IMG_PREF
+            title = CONVERT_IMG_PREF_TITLE
+            summary = CONVERT_IMG_PREF_SUM
+            setDefaultValue(true)
+        }.let(screen::addPreference)
+    }
+
     companion object {
         const val SEARCH_PREFIX = "slug:"
         private val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.ROOT)
+        private val WEBP_MEDIA_TYPE = "image/webp".toMediaType()
+        private const val CONVERT_IMG_PREF = "convert_img_pref"
+        private const val CONVERT_IMG_PREF_TITLE = "Исправлять изображения"
+        private const val CONVERT_IMG_PREF_SUM = "ⓘПриложение будет пытаться исправить изображения низкого качества.\nИзображения с анимацией будут конвертированы в статические при исправлении."
     }
 }

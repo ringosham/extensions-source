@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.extension.es.shadowmanga
 
 import eu.kanade.tachiyomi.extension.es.shadowmanga.interceptor.ImageFallbackInterceptor
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -10,6 +9,8 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
+import keiyoushi.annotation.Source
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.firstInstanceOrNull
 import keiyoushi.utils.parseAs
 import kotlinx.coroutines.CoroutineScope
@@ -18,12 +19,12 @@ import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import okhttp3.Response
+import kotlin.time.Duration.Companion.seconds
 
-class ShadowManga : HttpSource() {
+@Source
+abstract class ShadowManga : HttpSource() {
+    private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
 
-    override val name = "Shadow Manga"
-    override val baseUrl = "https://shademanga.com"
-    override val lang = "es"
     override val supportsLatest = true
 
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -35,9 +36,9 @@ class ShadowManga : HttpSource() {
 
     private val fallbackPrefix = "/api/media/"
 
-    override val client = network.cloudflareClient.newBuilder()
-        .rateLimitHost(baseUrl.toHttpUrl(), 3, 1)
-        .addInterceptor(ImageFallbackInterceptor(cdnHosts, baseUrl.toHttpUrl().host, fallbackPrefix))
+    override val client = network.client.newBuilder()
+        .addInterceptor(ImageFallbackInterceptor(cdnHosts, baseUrlHost, fallbackPrefix))
+        .rateLimit(3, 1.seconds) { it.host == baseUrlHost }
         .build()
 
     override fun headersBuilder() = super.headersBuilder()

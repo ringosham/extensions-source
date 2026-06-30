@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.extension.es.ravenmanga
 
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
-import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -11,6 +10,8 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.annotation.Source
+import keiyoushi.network.rateLimit
 import keiyoushi.utils.parseAs
 import okhttp3.FormBody
 import okhttp3.Headers
@@ -21,18 +22,14 @@ import okhttp3.Response
 import org.jsoup.nodes.Document
 import java.util.Calendar
 
-class RavenManga : HttpSource() {
-
-    override val name = "RavenManga"
-
-    override val baseUrl = "https://ravensword.lat"
-
-    override val lang = "es"
+@Source
+abstract class RavenManga : HttpSource() {
+    private val baseUrlHost by lazy { baseUrl.toHttpUrl().host }
 
     override val supportsLatest = true
 
-    override val client: OkHttpClient = network.cloudflareClient.newBuilder()
-        .rateLimitHost(baseUrl.toHttpUrl(), 2)
+    override val client: OkHttpClient = network.client.newBuilder()
+        .rateLimit(2) { it.host == baseUrlHost }
         .build()
 
     override fun headersBuilder(): Headers.Builder = super.headersBuilder()
