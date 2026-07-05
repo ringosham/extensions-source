@@ -20,9 +20,6 @@ abstract class GenerateExtensionManifestTask : DefaultTask() {
     abstract val extensionName: Property<String>
 
     @get:Input
-    abstract val className: Property<String>
-
-    @get:Input
     abstract val contentWarning: Property<ContentWarning>
 
     @get:Input
@@ -35,7 +32,7 @@ abstract class GenerateExtensionManifestTask : DefaultTask() {
     fun generate() {
         val filterList = filters.get()
         val name = extensionName.get().escapeXml()
-        val cls = className.get()
+        val cls = "ExtensionGenerated"
         val lib = extensionLib.get()
         val cw = contentWarning.get()
         val nsfw = if (cw == ContentWarning.SAFE) "0" else "1"
@@ -61,15 +58,19 @@ abstract class GenerateExtensionManifestTask : DefaultTask() {
             }
         }
 
-        val activitySection = if (filterList.isEmpty()) "" else buildString {
-            appendLine()
-            appendLine("        <activity")
-            appendLine("            android:name=\"keiyoushi.source.UrlActivity\"")
-            appendLine("            android:excludeFromRecents=\"true\"")
-            appendLine("            android:exported=\"true\"")
-            appendLine("            android:theme=\"@android:style/Theme.NoDisplay\">")
-            appendLine(intentFilters)
-            append("        </activity>")
+        val activitySection = if (filterList.isEmpty()) {
+            ""
+        } else {
+            buildString {
+                appendLine()
+                appendLine("        <activity")
+                appendLine("            android:name=\"keiyoushi.source.UrlActivity\"")
+                appendLine("            android:excludeFromRecents=\"true\"")
+                appendLine("            android:exported=\"true\"")
+                appendLine("            android:theme=\"@android:style/Theme.NoDisplay\">")
+                appendLine(intentFilters)
+                append("        </activity>")
+            }
         }
 
         out.writeText(

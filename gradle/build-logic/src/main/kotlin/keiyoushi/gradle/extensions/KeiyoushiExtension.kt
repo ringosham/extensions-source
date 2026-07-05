@@ -38,7 +38,9 @@ abstract class SourceSpec @Inject constructor(private val objects: ObjectFactory
 
     var baseUrl: String
         get() = error("baseUrl is write-only")
-        set(value) { resolvedBaseUrl.set(BaseUrlSpec.Static(value)) }
+        set(value) {
+            resolvedBaseUrl.set(BaseUrlSpec.Static(value))
+        }
 
     fun baseUrl(url: String, block: BaseUrlDsl.() -> Unit) {
         val dsl = objects.newInstance(BaseUrlDsl::class.java)
@@ -51,12 +53,10 @@ abstract class KeiyoushiExtension @Inject constructor(
     private val objects: ObjectFactory,
 ) {
     abstract val name: Property<String>
-    abstract val className: Property<String>
     abstract val versionCode: Property<Int>
     abstract val contentWarning: Property<ContentWarning>
     abstract val theme: Property<String>
     abstract val libVersion: Property<String>
-    abstract val baseUrl: Property<String>
 
     abstract val deeplinks: ListProperty<DeeplinkSpec>
     abstract val sources: ListProperty<SourceSpec>
